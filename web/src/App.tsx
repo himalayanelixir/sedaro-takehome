@@ -1,4 +1,4 @@
-import { Flex, Heading, Separator, Table } from '@radix-ui/themes';
+import { Flex, Heading, Separator, Table, Text } from '@radix-ui/themes';
 import { useEffect, useState } from 'react';
 import Plot from 'react-plotly.js';
 import { Link } from 'react-router-dom';
@@ -18,6 +18,22 @@ const App = () => {
   const [positionData, setPositionData] = useState<PlottedAgentData[]>([]);
   const [velocityData, setVelocityData] = useState<PlottedAgentData[]>([]);
   const [initialState, setInitialState] = useState<DataFrame>({});
+  const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
+
+    useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/metrics/json');
+        const data = await res.json();
+        setMetrics(data);
+      } catch (err) {
+        console.error('Failed to fetch metrics:', err);
+      }
+    };
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 30000); // auto-refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     // fetch plot data when the component mounts
@@ -172,6 +188,36 @@ const App = () => {
           </Table.Root>
         </Flex>
       </Flex>
+      <Flex justify="center" width="100%" m="4">
+        <Table.Root>
+          {/* Initial conditions table here */}
+        </Table.Root>
+      </Flex>
+
+      {/* Metrics Table (add below the initial state table) */}
+      {metrics && (
+        <Flex justify="center" width="100%" m="4" direction="column" align="center">
+          <Heading as="h3" size="4" mb="3">
+            Simulation Metrics
+          </Heading>
+          <Table.Root style={{ width: '600px' }}>
+            <Table.Header>
+              <Table.Row>
+                <Table.ColumnHeaderCell>Metric</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell>Value</Table.ColumnHeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {Object.entries(metrics).map(([key, value]) => (
+                <Table.Row key={key}>
+                  <Table.RowHeaderCell>{key}</Table.RowHeaderCell>
+                  <Table.Cell>{value}</Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table.Root>
+        </Flex>
+      )}
     </div>
   );
 };

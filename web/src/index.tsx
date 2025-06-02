@@ -8,6 +8,7 @@ import App from './App';
 import './index.css';
 import NotFound from './NotFound';
 import SimulateForm from './SimulateForm';
+import MetricsDashboard from 'MetricsDashboard';
 
 const router = createBrowserRouter([
   {
@@ -18,6 +19,10 @@ const router = createBrowserRouter([
   {
     path: Routes.SIMULATION,
     element: <App />,
+  },
+  {
+  path: Routes.METRICS,
+  element: <MetricsDashboard />,
   },
 ]);
 
