@@ -24,6 +24,3 @@ RUN mkdir /queries
 COPY --from=builder /queries/target/release/sedaro-nano-queries /queries/target/release/sedaro-nano-queries
 
 CMD [ "python3", "-m" , "flask", "run", "--debug", "--host=0.0.0.0", "--port=8000" ]
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/healthz || exit 1

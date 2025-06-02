@@ -10,10 +10,37 @@ from simulator import Simulator
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from store import QRangeStore
 import logging
+import sys
 from datetime import datetime
 import time
 class Base(DeclarativeBase):
     pass
+
+
+############################## Format logs ##############################
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        log_record = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "module": record.module,
+            "file": record.pathname,
+            "line": record.lineno,
+            "function": record.funcName,
+        }
+        return json.dumps(log_record)
+
+# Attach formatter to stream handler
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(JsonFormatter())
+
+# Set global logging config
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[handler]
+)
 
 
 ############################## Application Configuration ##############################
@@ -35,6 +62,7 @@ logging.basicConfig(level=logging.INFO)
 app_start_time = datetime.now()
 last_simulation_duration = None
 recent_average_sim_durations = deque(maxlen=10)
+
 
 ############################## Database Models ##############################
 
@@ -67,7 +95,6 @@ def collect_metrics():
 
 
 ############################## API Endpoints ##############################
-
 
 @app.get("/")
 def health():
@@ -165,6 +192,16 @@ def health_check():
             "sim_ready": False,
             "error": str(e)
         }, 500
+
+@app.get("/debug")
+def debug():
+    return {
+        "start_time": app_start_time.isoformat(),
+        "last_build_duration": app.config.get("LAST_BUILD_DURATION"),
+        "last_sim_duration": app.config.get("LAST_SIM_DURATION"),
+        "recent_durations": list(recent_average_sim_durations),
+        "db_entries": Simulation.query.count()
+    }
 
 #  Log request IPs and timestamps
 @app.before_request
