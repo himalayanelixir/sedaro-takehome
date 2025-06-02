@@ -129,6 +129,27 @@ last_simulation_duration_seconds {round(sim_duration, 4)}
 """.strip()
 
     return Response(prometheus_metrics, mimetype="text/plain")
+
+@app.get("/metrics/json")
+def metrics_json():
+    # Calculate server uptime in seconds
+    uptime = (datetime.now() - app_start_time).total_seconds()
+
+    # Count how many simulations have been stored
+    count = Simulation.query.count()
+
+    # Report durations, with defaults if unset
+    build_duration = app.config.get("LAST_BUILD_DURATION") or 0.0
+    sim_duration = app.config.get("LAST_SIM_DURATION") or 0.0
+
+    # Return metrics as JSON
+    return {
+        "uptime_seconds": round(uptime, 2),
+        "simulation_count": count,
+        "last_simulation_build_duration_seconds": round(build_duration, 4),
+        "last_simulation_duration_seconds": round(sim_duration, 4),
+    }
+
 @app.get("/healthz")
 def health_check():
     try:
