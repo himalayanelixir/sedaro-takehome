@@ -2,7 +2,7 @@
 
 import json
 
-from flask import Flask, request
+from flask import Flask, request, Response
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from simulator import Simulator
@@ -109,14 +109,26 @@ def metrics():
     # Report the duration of the most recent simulation
     sim_duration = app.config.get("LAST_SIM_DURATION") or 0.0
 
-    # Return as structured JSON metrics
-    return {
-        "uptime_seconds": round(uptime, 2),
-        "simulation_count": count,
-        "last_simulation_build_duration_seconds": round(build_duration, 4),
-        "last_simulation_duration_seconds": round(sim_duration, 4),
-    }
+    # Prometheus-compatible plain text output
+    prometheus_metrics = f"""
+# HELP app_uptime_seconds Uptime of the Flask app in seconds.
+# TYPE app_uptime_seconds gauge
+app_uptime_seconds {round(uptime, 2)}
 
+# HELP simulation_count Total number of simulations run.
+# TYPE simulation_count counter
+simulation_count {count}
+
+# HELP last_simulation_build_duration_seconds Time to build the simulation in seconds.
+# TYPE last_simulation_build_duration_seconds gauge
+last_simulation_build_duration_seconds {round(build_duration, 4)}
+
+# HELP last_simulation_duration_seconds Time to run the last simulation in seconds.
+# TYPE last_simulation_duration_seconds gauge
+last_simulation_duration_seconds {round(sim_duration, 4)}
+""".strip()
+
+    return Response(prometheus_metrics, mimetype="text/plain")
 @app.get("/healthz")
 def health_check():
     try:
