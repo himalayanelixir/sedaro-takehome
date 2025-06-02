@@ -10,7 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from store import QRangeStore
 import logging
 from datetime import datetime
-
+import time
 class Base(DeclarativeBase):
     pass
 
@@ -22,9 +22,17 @@ CORS(app, origins=["http://localhost:3030"])
 
 db = SQLAlchemy(model_class=Base)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
+app.config["LAST_BUILD_DURATION"] = None
+app.config["LAST_SIM_DURATION"] = None
 db.init_app(app)
 
 logging.basicConfig(level=logging.INFO)
+
+
+############################## Metrics ##############################
+
+app_start_time = datetime.now()
+last_simulation_duration = None
 
 ############################## Database Models ##############################
 
@@ -63,7 +71,7 @@ def simulate():
 
     # Define time and timeStep for each agent
     init: dict = request.json
-    for key in init.keys():
+    for key in init:
         init[key]["time"] = 0
         init[key]["timeStep"] = 0.01
 
@@ -71,12 +79,14 @@ def simulate():
     t = datetime.now()
     store = QRangeStore()
     simulator = Simulator(store=store, init=init)
-    logging.info(f"Time to Build: {datetime.now() - t}")
+    app.config["LAST_BUILD_DURATION"] = (datetime.now() - t).total_seconds()
+    logging.info(f"Time to Build: {app.config['LAST_BUILD_DURATION']}")
 
     # Run simulation
     t = datetime.now()
     simulator.simulate()
-    logging.info(f"Time to Simulate: {datetime.now() - t}")
+    app.config["LAST_SIM_DURATION"] = (datetime.now() - t).total_seconds()
+    logging.info(f"Time to Simulate: {app.config['LAST_SIM_DURATION']}")
 
     # Save data to database
     simulation = Simulation(data=json.dumps(store.store))
@@ -84,3 +94,47 @@ def simulate():
     db.session.commit()
 
     return store.store
+
+@app.get("/metrics")
+def metrics():
+    # Calculate server uptime in seconds
+    uptime = (datetime.now() - app_start_time).total_seconds()
+
+    # Count how many simulations have been stored
+    count = Simulation.query.count()
+    
+    # Report the build duration of the most recent simulation
+    build_duration = app.config.get("LAST_BUILD_DURATION") or 0.0
+
+    # Report the duration of the most recent simulation
+    sim_duration = app.config.get("LAST_SIM_DURATION") or 0.0
+
+    # Return as structured JSON metrics
+    return {
+        "uptime_seconds": round(uptime, 2),
+        "simulation_count": count,
+        "last_simulation_build_duration_seconds": round(build_duration, 4),
+        "last_simulation_duration_seconds": round(sim_duration, 4),
+    }
+
+@app.get("/healthz")
+def health_check():
+    try:
+        # Try a trivial DB query to verify DB connectivity
+        Simulation.query.first()
+
+        # If successful, return OK status
+        return {
+            "status": "ok",
+            "db": True,
+            "sim_ready": True
+        }
+
+    except Exception as e:
+        # On failure, return diagnostic error message
+        return {
+            "status": "fail",
+            "db": False,
+            "sim_ready": False,
+            "error": str(e)
+        }, 500
