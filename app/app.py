@@ -2,6 +2,7 @@
 
 import json
 
+from collections import deque
 from flask import Flask, request, Response
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -33,9 +34,9 @@ logging.basicConfig(level=logging.INFO)
 
 app_start_time = datetime.now()
 last_simulation_duration = None
+recent_average_sim_durations = deque(maxlen=10)
 
 ############################## Database Models ##############################
-
 
 class Simulation(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -44,6 +45,25 @@ class Simulation(db.Model):
 
 with app.app_context():
     db.create_all()
+
+
+############################## Helper Functions ##############################
+
+def collect_metrics():
+    uptime = (datetime.now() - app_start_time).total_seconds()
+    count = Simulation.query.count()
+    build_duration = app.config.get("LAST_BUILD_DURATION") or 0.0
+    sim_duration = app.config.get("LAST_SIM_DURATION") or 0.0
+
+    avg_duration = sum(recent_average_sim_durations) / len(recent_average_sim_durations) if recent_average_sim_durations else 0.0
+
+    return {
+        "uptime_seconds": round(uptime, 2),
+        "simulation_count": count,
+        "last_simulation_build_duration_seconds": round(build_duration, 4),
+        "last_simulation_duration_seconds": round(sim_duration, 4),
+        "recent_avg_simulation_duration_seconds": round(avg_duration, 4),
+    }
 
 
 ############################## API Endpoints ##############################
@@ -56,9 +76,10 @@ def health():
 
 @app.get("/simulation")
 def get_data():
-    # Get most recent simulation from database
     simulation: Simulation = Simulation.query.order_by(Simulation.id.desc()).first()
-    return simulation.data if simulation else []
+    if simulation:
+        return simulation.data, 200
+    return [], 404
 
 
 @app.post("/simulation")
@@ -71,9 +92,15 @@ def simulate():
 
     # Define time and timeStep for each agent
     init: dict = request.json
-    for key in init:
-        init[key]["time"] = 0
-        init[key]["timeStep"] = 0.01
+    if not init or not isinstance(init, dict):
+        return {"error": "Invalid simulation input"}, 400
+
+    try:
+        for key in init:
+            init[key]["time"] = 0
+            init[key]["timeStep"] = 0.01
+    except Exception:
+        return {"error": "Malformed body structure"}, 422
 
     # Create store and simulator
     t = datetime.now()
@@ -85,8 +112,10 @@ def simulate():
     # Run simulation
     t = datetime.now()
     simulator.simulate()
-    app.config["LAST_SIM_DURATION"] = (datetime.now() - t).total_seconds()
-    logging.info(f"Time to Simulate: {app.config['LAST_SIM_DURATION']}")
+    duration = (datetime.now() - t).total_seconds()
+    app.config["LAST_SIM_DURATION"] = duration
+    recent_average_sim_durations.append(duration)
+    logging.info(f"Time to Simulate: {duration}")
 
     # Save data to database
     simulation = Simulation(data=json.dumps(store.store))
@@ -97,58 +126,23 @@ def simulate():
 
 @app.get("/metrics")
 def metrics():
-    # Calculate server uptime in seconds
-    uptime = (datetime.now() - app_start_time).total_seconds()
+    metrics_data = collect_metrics()
+    return (
+        "\n".join([
+            f'sedaro_uptime_seconds {metrics_data["uptime_seconds"]}',
+            f'sedaro_simulation_count {metrics_data["simulation_count"]}',
+            f'sedaro_last_simulation_build_duration_seconds {metrics_data["last_simulation_build_duration_seconds"]}',
+            f'sedaro_last_simulation_duration_seconds {metrics_data["last_simulation_duration_seconds"]}',
+            f'sedaro_recent_avg_simulation_duration_seconds {metrics_data["recent_avg_simulation_duration_seconds"]}',
+        ]),
+        200,
+        {"Content-Type": "text/plain"},
+    )
 
-    # Count how many simulations have been stored
-    count = Simulation.query.count()
-    
-    # Report the build duration of the most recent simulation
-    build_duration = app.config.get("LAST_BUILD_DURATION") or 0.0
-
-    # Report the duration of the most recent simulation
-    sim_duration = app.config.get("LAST_SIM_DURATION") or 0.0
-
-    # Prometheus-compatible plain text output
-    prometheus_metrics = f"""
-# HELP app_uptime_seconds Uptime of the Flask app in seconds.
-# TYPE app_uptime_seconds gauge
-app_uptime_seconds {round(uptime, 2)}
-
-# HELP simulation_count Total number of simulations run.
-# TYPE simulation_count counter
-simulation_count {count}
-
-# HELP last_simulation_build_duration_seconds Time to build the simulation in seconds.
-# TYPE last_simulation_build_duration_seconds gauge
-last_simulation_build_duration_seconds {round(build_duration, 4)}
-
-# HELP last_simulation_duration_seconds Time to run the last simulation in seconds.
-# TYPE last_simulation_duration_seconds gauge
-last_simulation_duration_seconds {round(sim_duration, 4)}
-""".strip()
-
-    return Response(prometheus_metrics, mimetype="text/plain")
 
 @app.get("/metrics/json")
 def metrics_json():
-    # Calculate server uptime in seconds
-    uptime = (datetime.now() - app_start_time).total_seconds()
-
-    # Count how many simulations have been stored
-    count = Simulation.query.count()
-
-    # Report durations, with defaults if unset
-    build_duration = app.config.get("LAST_BUILD_DURATION") or 0.0
-    sim_duration = app.config.get("LAST_SIM_DURATION") or 0.0
-
-    # Return metrics as JSON
-    return {
-        "uptime_seconds": round(uptime, 2),
-        "simulation_count": count,
-        "last_simulation_build_duration_seconds": round(build_duration, 4),
-        "last_simulation_duration_seconds": round(sim_duration, 4),
-    }
+    return collect_metrics()
 
 @app.get("/healthz")
 def health_check():
@@ -171,3 +165,8 @@ def health_check():
             "sim_ready": False,
             "error": str(e)
         }, 500
+
+#  Log request IPs and timestamps
+@app.before_request
+def log_request_info():
+    logging.info(f"[{datetime.now().isoformat()}] {request.method} {request.path} from {request.remote_addr}")
