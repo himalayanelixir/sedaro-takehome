@@ -156,11 +156,25 @@ def metrics():
     metrics_data = collect_metrics()
     return (
         "\n".join([
-            f'sedaro_uptime_seconds {metrics_data["uptime_seconds"]}',
-            f'sedaro_simulation_count {metrics_data["simulation_count"]}',
-            f'sedaro_last_simulation_build_duration_seconds {metrics_data["last_simulation_build_duration_seconds"]}',
-            f'sedaro_last_simulation_duration_seconds {metrics_data["last_simulation_duration_seconds"]}',
-            f'sedaro_recent_avg_simulation_duration_seconds {metrics_data["recent_avg_simulation_duration_seconds"]}',
+            "# HELP sedaro_uptime_seconds Time since the app started in seconds",
+            "# TYPE sedaro_uptime_seconds gauge",
+            f"sedaro_uptime_seconds {metrics_data['uptime_seconds']}",
+
+            "# HELP sedaro_simulation_count Total number of simulations run",
+            "# TYPE sedaro_simulation_count counter",
+            f"sedaro_simulation_count {metrics_data['simulation_count']}",
+
+            "# HELP sedaro_last_simulation_build_duration_seconds Duration of the last simulator build",
+            "# TYPE sedaro_last_simulation_build_duration_seconds gauge",
+            f"sedaro_last_simulation_build_duration_seconds {metrics_data['last_simulation_build_duration_seconds']}",
+
+            "# HELP sedaro_last_simulation_duration_seconds Duration of the last simulation run",
+            "# TYPE sedaro_last_simulation_duration_seconds gauge",
+            f"sedaro_last_simulation_duration_seconds {metrics_data['last_simulation_duration_seconds']}",
+
+            "# HELP sedaro_recent_avg_simulation_duration_seconds Rolling average simulation duration (last 10)",
+            "# TYPE sedaro_recent_avg_simulation_duration_seconds gauge",
+            f"sedaro_recent_avg_simulation_duration_seconds {metrics_data['recent_avg_simulation_duration_seconds']}",
         ]),
         200,
         {"Content-Type": "text/plain"},
